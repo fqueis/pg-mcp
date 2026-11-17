@@ -1,6 +1,6 @@
 {
   "name": "@fqueis/pg-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Global MCP server for PostgreSQL: agents register connections on demand and query them read-only by default",
   "type": "module",
   "main": "dist/index.js",
