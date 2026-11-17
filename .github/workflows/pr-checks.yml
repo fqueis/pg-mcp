@@ -1,0 +1,82 @@
+# Quality gate for changes targeting main.
+#
+# Runs lint, build, and tests with coverage on pull_request events only.
+# Coverage floors come from vitest.config.ts.
+# Intentionally does not run on push to main: that would re-execute the same
+# suite after every merge.
+#
+# Concurrency cancels in-progress runs for the same PR ref when new commits land.
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: pr-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Version comes from package.json "packageManager" (do not set "version" here).
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --ignore-scripts --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build
+        run: pnpm build
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    # Disposable PostgreSQL for the integration spec (tests/integration). Without
+    # PG_MCP_TEST_URL that spec is skipped, so local runs need no database.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: pgmcp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --ignore-scripts --frozen-lockfile
+
+      - name: Test with coverage
+        env:
+          PG_MCP_TEST_URL: postgres://postgres:pgmcp@localhost:5432/postgres
+        run: pnpm test:coverage
