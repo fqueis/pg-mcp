@@ -6,7 +6,7 @@ import type { PgMcpService } from '@services/pg-mcp.service.js';
 import { errorResult, jsonResult } from '@utils/tool-result.utils.js';
 
 /**
- * Registers the statement tools: a read-only query and a statement that changes data.
+ * Registers the statement tools: a read-only query, an execution plan, and a statement that changes data.
  *
  * `execute` is always registered. Whether it runs is decided by the write
  * policy inside the service: refused, approved by the human, or allowed.
@@ -33,6 +33,27 @@ export function registerQueryTools(server: McpServer, service: PgMcpService): vo
     async (args) => {
       try {
         return jsonResult(await service.query(args));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    ToolMetadata.EXPLAIN.name,
+    {
+      title: ToolMetadata.EXPLAIN.title,
+      description: ToolMetadata.EXPLAIN.description,
+      inputSchema: {
+        connectionId: z.string().describe(ToolField.CONNECTION_ID),
+        sql: z.string().describe(ToolField.EXPLAIN_SQL),
+        params: z.array(paramValue).optional().describe(ToolField.PARAMS),
+        analyze: z.boolean().optional().describe(ToolField.ANALYZE),
+      },
+    },
+    async (args) => {
+      try {
+        return jsonResult(await service.explain(args));
       } catch (error) {
         return errorResult(error);
       }

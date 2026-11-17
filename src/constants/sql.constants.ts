@@ -4,6 +4,15 @@ export const SQL_SHOW_SERVER_VERSION = 'SHOW server_version';
 /** Column returned by {@link SQL_SHOW_SERVER_VERSION}. */
 export const SQL_COLUMN_SERVER_VERSION = 'server_version';
 
+/** Prefix of the statement that asks for an execution plan in JSON format without running the statement; the statement follows it. */
+export const SQL_EXPLAIN_PREFIX = 'EXPLAIN (FORMAT JSON) ';
+
+/** Prefix of the statement that runs the statement and reports measured times in JSON format; the statement follows it. */
+export const SQL_EXPLAIN_ANALYZE_PREFIX = 'EXPLAIN (ANALYZE, FORMAT JSON) ';
+
+/** Column that holds the plan in the result of an `EXPLAIN`. */
+export const SQL_COLUMN_QUERY_PLAN = 'QUERY PLAN';
+
 /** Opens a transaction the server refuses to write in, whatever the SQL says. */
 export const SQL_BEGIN_READ_ONLY = 'BEGIN READ ONLY';
 

@@ -1,9 +1,17 @@
 import { ErrorMessage } from '@constants/error-messages.constants.js';
-import { SQL_COLUMN_SERVER_VERSION, SQL_SHOW_SERVER_VERSION } from '@constants/sql.constants.js';
+import {
+  SQL_COLUMN_QUERY_PLAN,
+  SQL_COLUMN_SERVER_VERSION,
+  SQL_EXPLAIN_ANALYZE_PREFIX,
+  SQL_EXPLAIN_PREFIX,
+  SQL_SHOW_SERVER_VERSION,
+} from '@constants/sql.constants.js';
 import type { ConnectionSummary } from '@interfaces/connection-summary.interface.js';
 import type { ActiveConnection } from '@interfaces/active-connection.interface.js';
 import type { DatabasePool } from '@interfaces/database-pool.interface.js';
 import type { DescribeTableInput } from '@interfaces/describe-table-input.interface.js';
+import type { ExplainInput } from '@interfaces/explain-input.interface.js';
+import type { ExplainOutput } from '@interfaces/explain-output.interface.js';
 import type { ExecuteInput } from '@interfaces/execute-input.interface.js';
 import type { ExecuteOutput } from '@interfaces/execute-output.interface.js';
 import type { ListTablesInput } from '@interfaces/list-tables-input.interface.js';
@@ -143,6 +151,34 @@ export class PgMcpService {
       const result = await runInWriteTransaction(pool, input.sql, input.params, this.options.statementTimeoutMs);
       const rows = result.rows.slice(0, this.options.maxRows);
       return { rowCount: result.rowCount, rows, truncated: result.rows.length > this.options.maxRows };
+    } catch (error) {
+      throw this.redactedError(error);
+    }
+  }
+
+  /**
+   * Returns the execution plan of a statement, inside a read-only transaction.
+   *
+   * Without `analyze` the statement is only planned, so even a write can be explained safely.
+   * With `analyze` it really runs; the read-only transaction still refuses a write.
+   *
+   * @param input - Connection id, SQL, parameters, and whether to measure.
+   * @returns The plan in the JSON shape PostgreSQL reports.
+   * @throws {@link Error} when the connection is not registered, the database returns no plan, or the statement fails (message is redacted).
+   */
+  async explain(input: ExplainInput): Promise<ExplainOutput> {
+    const { pool } = await this.connectionFor(input.connectionId);
+    const prefix = input.analyze ? SQL_EXPLAIN_ANALYZE_PREFIX : SQL_EXPLAIN_PREFIX;
+    try {
+      const result = await runInReadOnlyTransaction(
+        pool,
+        `${prefix}${input.sql}`,
+        input.params,
+        this.options.statementTimeoutMs,
+      );
+      const plan = (result.rows[0]?.[SQL_COLUMN_QUERY_PLAN] as Record<string, unknown>[] | undefined)?.[0];
+      if (!plan) throw new Error(ErrorMessage.EXPLAIN_RETURNED_NO_PLAN);
+      return { plan };
     } catch (error) {
       throw this.redactedError(error);
     }

@@ -66,6 +66,16 @@ export const ToolMetadata = {
       'Run one SQL statement inside a read-only transaction. The server refuses any write. Results are capped ' +
       'at the row limit and flagged with truncated when more rows existed. Bind values with $1, $2 and params.',
   },
+  /** Explains a statement. */
+  EXPLAIN: {
+    name: 'explain',
+    title: 'Explain a statement',
+    description:
+      'Return the execution plan of one SQL statement as JSON, to judge cost and index use before running it. ' +
+      'Without analyze the statement is only planned, so even an INSERT, UPDATE or DELETE can be explained safely. ' +
+      'With analyze the statement really runs and the plan carries measured times; the transaction stays read-only, ' +
+      'so a write is still refused.',
+  },
   /** Runs a statement that changes data. */
   EXECUTE: {
     name: 'execute',
@@ -101,7 +111,11 @@ export const ToolField = {
   QUERY_SQL: 'A single read-only SQL statement. Use $1, $2 for values.',
   /** `sql` of execute. */
   EXECUTE_SQL: 'A single SQL statement that changes data. Use $1, $2 for values.',
-  /** `params` of query and execute. */
+  /** `sql` of explain. */
+  EXPLAIN_SQL: 'A single SQL statement to explain. Use $1, $2 for values.',
+  /** `analyze` of explain. */
+  ANALYZE: 'When true the statement really runs and the plan includes measured times. Default false: plan only.',
+  /** `params` of query, explain and execute. */
   PARAMS: 'Values bound to $1, $2, and so on, in order.',
   /** `maxRows` of query. */
   MAX_ROWS: 'Maximum rows to return. Capped by the server limit.',

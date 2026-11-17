@@ -16,6 +16,8 @@ export const ErrorMessage = {
   /** The client cannot ask the human, so the agent must ask in chat and repeat the call with the confirmation flag. */
   WRITE_NEEDS_CONFIRMATION:
     "This change needs the human's approval. Show the human the connection and the exact SQL, ask for an explicit yes in chat, and only then repeat the call with confirmedByUser: true.",
+  /** An `EXPLAIN` returned no plan row. */
+  EXPLAIN_RETURNED_NO_PLAN: 'The database returned no plan for this statement.',
   /** `envFile` was given without the key to read from it. */
   ENV_FILE_REQUIRES_KEY: 'envFile requires envKey, the name of the key that holds the connection string.',
 
