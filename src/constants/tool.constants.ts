@@ -58,6 +58,15 @@ export const ToolMetadata = {
     description:
       'Describe one table or view: columns with types, nullability and defaults, primary key, foreign keys, and indexes.',
   },
+  /** Searches tables and columns by name. */
+  SEARCH_SCHEMA: {
+    name: 'search_schema',
+    title: 'Search schema',
+    description:
+      'Find tables and columns whose name contains a term (case-insensitive), across every user schema or one schema. ' +
+      'Use it in an unfamiliar database to locate where something lives before calling describe_table. ' +
+      'Results are capped per kind.',
+  },
   /** Runs a read-only query. */
   QUERY: {
     name: 'query',
@@ -105,6 +114,8 @@ export const ToolField = {
   CONNECTION_NEW_ID: 'Stable id to register under. Defaults to host-port-database.',
   /** `schema` of list_tables and describe_table. */
   SCHEMA: 'Schema name. Defaults to public.',
+  /** `term` of search_schema. */
+  SEARCH_TERM: 'Text to look for in table and column names, case-insensitive. Not blank.',
   /** `table` of describe_table. */
   TABLE: 'Table or view name.',
   /** `sql` of query. */

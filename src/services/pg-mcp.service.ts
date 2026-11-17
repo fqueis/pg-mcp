@@ -19,6 +19,8 @@ import type { OpenedConnection } from '@interfaces/opened-connection.interface.j
 import type { PgMcpServiceOptions } from '@interfaces/pg-mcp-service-options.interface.js';
 import type { QueryInput } from '@interfaces/query-input.interface.js';
 import type { QueryOutput } from '@interfaces/query-output.interface.js';
+import type { SchemaSearchResult } from '@interfaces/schema-search-result.interface.js';
+import type { SearchSchemaInput } from '@interfaces/search-schema-input.interface.js';
 import type { TableDescription } from '@interfaces/table-description.interface.js';
 import type { TableInfo } from '@interfaces/table-info.interface.js';
 import type { UseConnectionInput } from '@interfaces/use-connection-input.interface.js';
@@ -241,6 +243,19 @@ export class PgMcpService {
    */
   async describeTable(input: DescribeTableInput): Promise<TableDescription> {
     return this.catalog.describeTable(await this.catalogRunner(input.connectionId), input.table, input.schema);
+  }
+
+  /**
+   * Finds the tables and columns of a registered connection's database whose name contains a term.
+   *
+   * @param input - Connection id, the term, and an optional schema to restrict to.
+   * @returns The matching tables and columns, capped per kind.
+   * @throws {@link Error} when the term is blank, the connection is not registered, or the catalog read fails (message is redacted).
+   */
+  async searchSchema(input: SearchSchemaInput): Promise<SchemaSearchResult> {
+    const term = input.term.trim();
+    if (!term) throw new Error(ErrorMessage.EMPTY_SEARCH_TERM);
+    return this.catalog.searchSchema(await this.catalogRunner(input.connectionId), term, input.schema);
   }
 
   /**

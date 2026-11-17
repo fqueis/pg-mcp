@@ -6,10 +6,12 @@ import {
   CATALOG_SQL_EXTENSION,
   CatalogQuery,
   DEFAULT_SCHEMA,
+  SEARCH_RESULT_LIMIT,
 } from '@constants/catalog.constants.js';
 import type { CatalogQueryType } from '@constants/catalog.constants.js';
 import { TEXT_FILE_ENCODING } from '@constants/encoding.constants.js';
 import { ErrorMessage } from '@constants/error-messages.constants.js';
+import type { SchemaSearchResult } from '@interfaces/schema-search-result.interface.js';
 import type { TableDescription } from '@interfaces/table-description.interface.js';
 import type { TableInfo } from '@interfaces/table-info.interface.js';
 import type { CatalogRunner } from '@app-types/catalog-runner.type.js';
@@ -59,6 +61,23 @@ export class CatalogService {
     const description = await this.fetch<TableDescription>(run, CatalogQuery.DESCRIBE_TABLE, [schema, table]);
     if (!description) throw new Error(ErrorMessage.tableNotFound(schema, table));
     return description;
+  }
+
+  /**
+   * Finds the tables and columns whose name contains a term.
+   *
+   * @param run - Runs a catalog statement.
+   * @param term - Text to look for, case-insensitive; `%` and `_` match themselves.
+   * @param schema - Restrict the search to one schema; every user schema when omitted.
+   * @returns The matches, capped per kind; empty lists when nothing matches.
+   */
+  async searchSchema(run: CatalogRunner, term: string, schema?: string): Promise<SchemaSearchResult> {
+    const found = await this.fetch<SchemaSearchResult>(run, CatalogQuery.SEARCH_SCHEMA, [
+      term,
+      schema ?? null,
+      SEARCH_RESULT_LIMIT,
+    ]);
+    return found ?? { tables: [], columns: [] };
   }
 
   /**
