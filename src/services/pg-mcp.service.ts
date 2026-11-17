@@ -159,7 +159,14 @@ export class PgMcpService {
     const { pool } = await this.connectionFor(input.connectionId);
     const limit = Math.min(input.maxRows ?? this.options.maxRows, this.options.maxRows);
     try {
-      const result = await runInReadOnlyTransaction(pool, input.sql, input.params, this.options.statementTimeoutMs);
+      // One row beyond the limit tells whether the result was cut, without reading the rest of it.
+      const result = await runInReadOnlyTransaction(
+        pool,
+        input.sql,
+        input.params,
+        this.options.statementTimeoutMs,
+        limit + 1,
+      );
       const rows = result.rows.slice(0, limit);
       return { rows, rowCount: rows.length, truncated: result.rows.length > limit };
     } catch (error) {
