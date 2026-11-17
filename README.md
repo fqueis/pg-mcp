@@ -15,8 +15,9 @@ Most PostgreSQL MCP servers read one connection string from the environment, whi
 Built with [`@modelcontextprotocol/sdk`](https://www.npmjs.com/package/@modelcontextprotocol/sdk) and [`pg`](https://www.npmjs.com/package/pg), it provides:
 
 - **On-demand connections**: call `use_connection` with a database URL, or point at an environment variable or a `.env` file so the password never appears in the conversation
-- **Schema exploration**: schemas, tables, and a full table description (columns, primary key, foreign keys, indexes) from one catalog query each
-- **Read-only by default**: `query` runs inside a `READ ONLY` transaction enforced by the server, with a statement timeout and a row cap
+- **Schema exploration**: schemas, tables, a search by name across the whole database, and a full table description (columns, primary key, foreign keys, indexes, enum values, estimated row count), each from one catalog query
+- **Read-only by default**: `query` runs inside a `READ ONLY` transaction enforced by the server, with a statement timeout and a row cap that the server applies, so a huge result is never loaded into memory
+- **Execution plans**: `explain` shows how PostgreSQL would run a statement, even a write, without running it
 - **Controlled writes**: `execute` is refused, asks the human through MCP elicitation, or runs directly, depending on `PG_MCP_WRITES`
 - **No secrets in output**: passwords are masked in every result and error, and are not written to disk when you use an environment variable or a `.env` file
 
@@ -122,8 +123,8 @@ PG_MCP_TEST_URL=postgres://postgres:pgmcp@localhost:55432/postgres pnpm test
 ## Typical agent flow
 
 1. `use_connection` with `envFile` + `envKey` (or `envVar`, or `databaseUrl`) and an optional `id`
-2. `list_schemas` / `list_tables` / `describe_table` to learn the structure
-3. `query` to read data (read-only, parameterized with `$1`, `$2` and `params`)
+2. `list_schemas` / `list_tables` / `describe_table` to learn the structure, or `search_schema` to find where a table or column lives
+3. `query` to read data (read-only, parameterized with `$1`, `$2` and `params`), and `explain` to check the plan of a heavy statement first
 4. `execute` to change data, subject to the [write policy](#write-policy)
 5. `forget_connection` or `clear_connections` to drop registrations; `refresh_connection` to reopen a connection after the password or the `.env` file changed
 
@@ -142,8 +143,10 @@ If no credential source is given, the tool returns a clear error so the agent ca
 | `refresh_connection` | Reopen a connection, resolving its credential source again                       |
 | `list_schemas`       | User schemas of the database                                                     |
 | `list_tables`        | Tables and views of one schema (default `public`)                                |
-| `describe_table`     | Columns, primary key, foreign keys, and indexes of one table                     |
-| `query`              | Run one statement in a read-only transaction                                     |
+| `describe_table`     | Columns (with enum values), primary key, foreign keys, indexes, estimated rows   |
+| `search_schema`      | Find tables and columns whose name contains a term (case-insensitive)            |
+| `query`              | Run one statement in a read-only transaction, reading at most the row limit      |
+| `explain`            | Execution plan of a statement as JSON; planned only, unless `analyze` is set     |
 | `execute`            | Run one statement that changes data, subject to the write policy                 |
 
 ---
@@ -193,7 +196,7 @@ MCP client configs (`mcp.json` and equivalents) pass `env` into the server proce
 | `PG_MCP_REGISTRY_TTL_MS`      | `604800000`                      | Sliding TTL of a registered connection (7 days)                  |
 | `PG_MCP_WRITES`               | `ask`                            | Write policy: `off`, `ask`, or `on`                              |
 | `PG_MCP_ENABLE_WRITES`        | unset                            | When `"1"` / `"true"` / `"yes"`, same as `PG_MCP_WRITES=on`      |
-| `PG_MCP_MAX_ROWS`             | `500`                            | Maximum rows a query returns (then flagged as `truncated`)       |
+| `PG_MCP_MAX_ROWS`             | `500`                            | Maximum rows a query returns, read from the server (then flagged `truncated`) |
 | `PG_MCP_STATEMENT_TIMEOUT_MS` | `15000`                          | The server cancels a statement that runs longer                  |
 
 `PG_MCP_WRITES`, when set, wins over `PG_MCP_ENABLE_WRITES`.

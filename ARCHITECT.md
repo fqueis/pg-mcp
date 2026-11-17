@@ -15,7 +15,7 @@ The server is **global**: it is registered once in the MCP client, and agents re
 | Thin MCP tool adapters (Zod)            | [`src/tools/*`](src/tools)                                                                               |
 | Orchestration façade                    | [`src/services/pg-mcp.service.ts`](src/services/pg-mcp.service.ts)                                       |
 | Disk connection registry                | [`src/services/connection-registry.service.ts`](src/services/connection-registry.service.ts)             |
-| Catalog reads (schemas, tables, tables) | [`src/services/catalog.service.ts`](src/services/catalog.service.ts), [`src/sql/*`](src/sql)             |
+| Catalog reads (schemas, tables, search) | [`src/services/catalog.service.ts`](src/services/catalog.service.ts), [`src/sql/*`](src/sql)             |
 | Write permission                        | [`src/services/write-policy.service.ts`](src/services/write-policy.service.ts)                           |
 | Ask the human through the client        | [`src/providers/mcp-elicitor.provider.ts`](src/providers/mcp-elicitor.provider.ts)                       |
 | Pool creation (`pg`)                    | [`src/providers/pool.provider.ts`](src/providers/pool.provider.ts)                                       |
@@ -94,10 +94,11 @@ sequenceDiagram
   C->>T: query connectionId sql params
   T->>S: query
   S->>P: BEGIN READ ONLY, SET LOCAL timeout
-  P->>DB: statement
-  DB-->>P: rows
+  P->>DB: DECLARE cursor FOR statement
+  P->>DB: FETCH FORWARD limit plus one
+  DB-->>P: at most limit plus one rows
   S->>P: ROLLBACK
-  S-->>T: rows capped at the limit
+  S-->>T: rows capped at the limit, truncated flag
   T-->>C: JSON result
 ```
 
@@ -142,15 +143,21 @@ There is no per-project configuration and no connection string in the MCP client
 
 ### 3. Read-only is enforced by the server
 
-`query` and every catalog read run inside `BEGIN READ ONLY` with `SET LOCAL statement_timeout`, and always end in `ROLLBACK`. PostgreSQL itself rejects any write, so no SQL parsing or keyword filtering is involved. Results are capped at a row limit and flagged `truncated`.
+`query` and every catalog read run inside `BEGIN READ ONLY` with `SET LOCAL statement_timeout`, and always end in `ROLLBACK`. PostgreSQL itself rejects any write, so no SQL parsing or keyword filtering decides what is allowed. Results are capped at a row limit and flagged `truncated`.
 
 ### 4. Write policy with a human in the loop
 
 `execute` is always registered. `PG_MCP_WRITES` decides what happens: `off` refuses, `on` runs, and `ask` (default) asks the human through MCP elicitation, showing the connection, the exact SQL, and the parameters. Anything other than an explicit, ticked acceptance counts as "no". When the client cannot ask, the agent's `confirmedByUser` claim is accepted as a soft fallback; it never bypasses a question the client can show.
 
+### 4b. Row limits are applied by the server
+
+A cap applied after reading the result would still load every row into memory first: a `SELECT *` over millions of rows finishes well inside the statement timeout and can take hundreds of megabytes. `query` therefore reads through a server-side cursor (`DECLARE ... CURSOR`, then `FETCH FORWARD limit+1`), so the server hands over at most one row beyond the limit, and that extra row is what tells the caller the result was cut.
+
+Only a statement that starts with `SELECT`, `WITH`, `VALUES`, `TABLE`, or an opening parenthesis is tried as a cursor. `SHOW`, `EXPLAIN`, writes, and invalid SQL run directly, which keeps failed cursor attempts out of the database log. A candidate the server still refuses as a cursor (for example a data-modifying `WITH`) is rolled back and run directly in a fresh transaction, so the caller always sees the statement's own result or error. Writes through `execute` are not cursor-read: a `RETURNING` clause is capped after the fact.
+
 ### 5. Catalog queries are SQL files returning JSON
 
-Each catalog tool is one `.sql` file in `src/sql` that returns a single JSON document already shaped like the result (`jsonb_build_object`). The `CatalogService` loads the file once, runs it, and unwraps the document, so there is no row-mapping code and no SQL inside TypeScript. The queries read `pg_catalog` directly, which is faster than `information_schema` and lists objects regardless of the role's ownership. A table description needs one query in one transaction.
+Each catalog tool is one `.sql` file in `src/sql` that returns a single JSON document already shaped like the result (`jsonb_build_object`). The `CatalogService` loads the file once, runs it, and unwraps the document, so there is no row-mapping code and no SQL inside TypeScript. The queries read `pg_catalog` directly, which is faster than `information_schema` and lists objects regardless of the role's ownership. A table description needs one query in one transaction, and it includes the enum labels of enum columns and the estimated row count taken from `pg_class` statistics. `search_schema` is one query too: it matches table and column names case-insensitively, treating `%` and `_` in the term literally, and caps the matches per kind.
 
 ### 6. Secrets never leave the process
 
