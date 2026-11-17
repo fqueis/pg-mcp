@@ -10,4 +10,6 @@ export interface ColumnInfo {
   nullable: boolean;
   /** Default expression, or `null` when the column has none. */
   default: string | null;
+  /** Labels of the enum type in declaration order, or `null` when the column is not an enum. */
+  enumValues: string[] | null;
 }

@@ -10,6 +10,11 @@ export interface TableDescription {
   schema: string;
   /** Table name. */
   table: string;
+  /**
+   * Rows PostgreSQL estimates the table holds, from its statistics. `null` when it has none yet
+   * (never analyzed) and for a view. An estimate, not a count: use `query` for an exact number.
+   */
+  estimatedRows: number | null;
   /** Columns in declaration order. */
   columns: ColumnInfo[];
   /** Primary key columns in key order; empty when the table has none. */
