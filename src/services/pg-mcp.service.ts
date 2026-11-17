@@ -1,9 +1,17 @@
 import { ErrorMessage } from '@constants/error-messages.constants.js';
-import { SQL_COLUMN_SERVER_VERSION, SQL_SHOW_SERVER_VERSION } from '@constants/sql.constants.js';
+import {
+  SQL_COLUMN_QUERY_PLAN,
+  SQL_COLUMN_SERVER_VERSION,
+  SQL_EXPLAIN_ANALYZE_PREFIX,
+  SQL_EXPLAIN_PREFIX,
+  SQL_SHOW_SERVER_VERSION,
+} from '@constants/sql.constants.js';
 import type { ConnectionSummary } from '@interfaces/connection-summary.interface.js';
 import type { ActiveConnection } from '@interfaces/active-connection.interface.js';
 import type { DatabasePool } from '@interfaces/database-pool.interface.js';
 import type { DescribeTableInput } from '@interfaces/describe-table-input.interface.js';
+import type { ExplainInput } from '@interfaces/explain-input.interface.js';
+import type { ExplainOutput } from '@interfaces/explain-output.interface.js';
 import type { ExecuteInput } from '@interfaces/execute-input.interface.js';
 import type { ExecuteOutput } from '@interfaces/execute-output.interface.js';
 import type { ListTablesInput } from '@interfaces/list-tables-input.interface.js';
@@ -11,6 +19,8 @@ import type { OpenedConnection } from '@interfaces/opened-connection.interface.j
 import type { PgMcpServiceOptions } from '@interfaces/pg-mcp-service-options.interface.js';
 import type { QueryInput } from '@interfaces/query-input.interface.js';
 import type { QueryOutput } from '@interfaces/query-output.interface.js';
+import type { SchemaSearchResult } from '@interfaces/schema-search-result.interface.js';
+import type { SearchSchemaInput } from '@interfaces/search-schema-input.interface.js';
 import type { TableDescription } from '@interfaces/table-description.interface.js';
 import type { TableInfo } from '@interfaces/table-info.interface.js';
 import type { UseConnectionInput } from '@interfaces/use-connection-input.interface.js';
@@ -149,6 +159,34 @@ export class PgMcpService {
   }
 
   /**
+   * Returns the execution plan of a statement, inside a read-only transaction.
+   *
+   * Without `analyze` the statement is only planned, so even a write can be explained safely.
+   * With `analyze` it really runs; the read-only transaction still refuses a write.
+   *
+   * @param input - Connection id, SQL, parameters, and whether to measure.
+   * @returns The plan in the JSON shape PostgreSQL reports.
+   * @throws {@link Error} when the connection is not registered, the database returns no plan, or the statement fails (message is redacted).
+   */
+  async explain(input: ExplainInput): Promise<ExplainOutput> {
+    const { pool } = await this.connectionFor(input.connectionId);
+    const prefix = input.analyze ? SQL_EXPLAIN_ANALYZE_PREFIX : SQL_EXPLAIN_PREFIX;
+    try {
+      const result = await runInReadOnlyTransaction(
+        pool,
+        `${prefix}${input.sql}`,
+        input.params,
+        this.options.statementTimeoutMs,
+      );
+      const plan = (result.rows[0]?.[SQL_COLUMN_QUERY_PLAN] as Record<string, unknown>[] | undefined)?.[0];
+      if (!plan) throw new Error(ErrorMessage.EXPLAIN_RETURNED_NO_PLAN);
+      return { plan };
+    } catch (error) {
+      throw this.redactedError(error);
+    }
+  }
+
+  /**
    * Runs one statement on a registered connection inside a read-only transaction.
    *
    * @param input - Connection id, SQL, parameters, and optional row limit.
@@ -159,7 +197,14 @@ export class PgMcpService {
     const { pool } = await this.connectionFor(input.connectionId);
     const limit = Math.min(input.maxRows ?? this.options.maxRows, this.options.maxRows);
     try {
-      const result = await runInReadOnlyTransaction(pool, input.sql, input.params, this.options.statementTimeoutMs);
+      // One row beyond the limit tells whether the result was cut, without reading the rest of it.
+      const result = await runInReadOnlyTransaction(
+        pool,
+        input.sql,
+        input.params,
+        this.options.statementTimeoutMs,
+        limit + 1,
+      );
       const rows = result.rows.slice(0, limit);
       return { rows, rowCount: rows.length, truncated: result.rows.length > limit };
     } catch (error) {
@@ -198,6 +243,19 @@ export class PgMcpService {
    */
   async describeTable(input: DescribeTableInput): Promise<TableDescription> {
     return this.catalog.describeTable(await this.catalogRunner(input.connectionId), input.table, input.schema);
+  }
+
+  /**
+   * Finds the tables and columns of a registered connection's database whose name contains a term.
+   *
+   * @param input - Connection id, the term, and an optional schema to restrict to.
+   * @returns The matching tables and columns, capped per kind.
+   * @throws {@link Error} when the term is blank, the connection is not registered, or the catalog read fails (message is redacted).
+   */
+  async searchSchema(input: SearchSchemaInput): Promise<SchemaSearchResult> {
+    const term = input.term.trim();
+    if (!term) throw new Error(ErrorMessage.EMPTY_SEARCH_TERM);
+    return this.catalog.searchSchema(await this.catalogRunner(input.connectionId), term, input.schema);
   }
 
   /**

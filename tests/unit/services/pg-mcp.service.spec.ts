@@ -183,9 +183,16 @@ describe('PgMcpService', () => {
     const orders = {
       schema: 'public',
       table: 'orders',
+      estimatedRows: 1200,
       columns: [
-        { name: 'id', type: 'integer', nullable: false, default: "nextval('orders_id_seq'::regclass)" },
-        { name: 'customer_id', type: 'integer', nullable: true, default: null },
+        {
+          name: 'id',
+          type: 'integer',
+          nullable: false,
+          default: "nextval('orders_id_seq'::regclass)",
+          enumValues: null,
+        },
+        { name: 'customer_id', type: 'integer', nullable: true, default: null, enumValues: null },
       ],
       primaryKey: ['id'],
       foreignKeys: [
@@ -376,6 +383,167 @@ describe('PgMcpService', () => {
     });
   });
 
+  describe('searchSchema', () => {
+    const matches = {
+      tables: [{ schema: 'public', name: 'orders', type: 'table' }],
+      columns: [{ schema: 'public', table: 'customers', column: 'order_count', type: 'integer' }],
+    };
+
+    /**
+     * Builds a harness whose fake database answers the schema search and records the parameters it receives.
+     *
+     * @returns The harness, the parameters seen, with a connection already registered.
+     */
+    const withSearchAnswer = async () => {
+      const sql = await readCatalogSql(CatalogQuery.SEARCH_SCHEMA);
+      const seenParams: unknown[][] = [];
+      const scripted = await createServiceHarness((text, params) => {
+        if (text !== sql) return undefined;
+        seenParams.push(params ?? []);
+        return catalogAnswer(matches);
+      });
+      await scripted.service.useConnection({ databaseUrl: SHOP_URL });
+      return { scripted, seenParams };
+    };
+
+    it('returns the tables and columns whose name matches, across every schema by default', async () => {
+      const { scripted, seenParams } = await withSearchAnswer();
+
+      const result = await scripted.service.searchSchema({ connectionId: 'localhost-5432-shop', term: 'order' });
+
+      expect(result).toEqual(matches);
+      // Parameters: the term, no schema filter, and the cap on matches per kind.
+      expect(seenParams).toEqual([['order', null, 50]]);
+      await scripted.cleanup();
+    });
+
+    it('restricts the search to the schema the caller names', async () => {
+      const { scripted, seenParams } = await withSearchAnswer();
+
+      await scripted.service.searchSchema({ connectionId: 'localhost-5432-shop', term: 'order', schema: 'sales' });
+
+      expect(seenParams).toEqual([['order', 'sales', 50]]);
+      await scripted.cleanup();
+    });
+
+    it('returns empty lists when the database finds nothing', async () => {
+      await harness.service.useConnection({ databaseUrl: SHOP_URL });
+
+      const result = await harness.service.searchSchema({ connectionId: 'localhost-5432-shop', term: 'zzz' });
+
+      expect(result).toEqual({ tables: [], columns: [] });
+    });
+
+    it.each(['', '   '])('rejects the blank search term %j', async (term) => {
+      await harness.service.useConnection({ databaseUrl: SHOP_URL });
+
+      const attempt = harness.service.searchSchema({ connectionId: 'localhost-5432-shop', term });
+
+      await expect(attempt).rejects.toThrow(/search term/i);
+    });
+
+    it('fails clearly for a connection id that is not registered', async () => {
+      const attempt = harness.service.searchSchema({ connectionId: 'unknown', term: 'order' });
+
+      await expect(attempt).rejects.toThrow(/unknown/);
+    });
+  });
+
+  describe('explain', () => {
+    const plan = { Plan: { 'Node Type': 'Seq Scan', 'Relation Name': 'orders' } };
+
+    /**
+     * Builds a harness whose fake database answers an `EXPLAIN` statement with a plan.
+     *
+     * @param explainSql - The exact `EXPLAIN` statement the database should receive.
+     * @returns The harness, with a connection already registered.
+     */
+    const withPlanFor = async (explainSql: string) => {
+      const scripted = await createServiceHarness((text) =>
+        text === explainSql ? { rows: [{ 'QUERY PLAN': [plan] }], rowCount: 1 } : undefined,
+      );
+      await scripted.service.useConnection({ databaseUrl: SHOP_URL });
+      return scripted;
+    };
+
+    it('returns the plan of a statement without running it', async () => {
+      const scripted = await withPlanFor('EXPLAIN (FORMAT JSON) SELECT * FROM orders');
+
+      const output = await scripted.service.explain({
+        connectionId: 'localhost-5432-shop',
+        sql: 'SELECT * FROM orders',
+      });
+
+      expect(output).toEqual({ plan });
+      // Skip the version check that useConnection sends while registering; the rest is the transaction under test.
+      expect(scripted.pools[0]?.pool.statements.slice(1)).toEqual([
+        'BEGIN READ ONLY',
+        'SET LOCAL statement_timeout = 15000',
+        'EXPLAIN (FORMAT JSON) SELECT * FROM orders',
+        'ROLLBACK',
+      ]);
+      await scripted.cleanup();
+    });
+
+    it('measures the real execution when analyze is requested', async () => {
+      const scripted = await withPlanFor('EXPLAIN (ANALYZE, FORMAT JSON) SELECT * FROM orders');
+
+      const output = await scripted.service.explain({
+        connectionId: 'localhost-5432-shop',
+        sql: 'SELECT * FROM orders',
+        analyze: true,
+      });
+
+      expect(output).toEqual({ plan });
+      await scripted.cleanup();
+    });
+
+    it('binds the parameters of the statement', async () => {
+      const seenParams: unknown[][] = [];
+      const scripted = await createServiceHarness((text, params) => {
+        if (!text.startsWith('EXPLAIN')) return undefined;
+        seenParams.push(params ?? []);
+        return { rows: [{ 'QUERY PLAN': [plan] }], rowCount: 1 };
+      });
+      await scripted.service.useConnection({ databaseUrl: SHOP_URL });
+
+      await scripted.service.explain({
+        connectionId: 'localhost-5432-shop',
+        sql: 'SELECT * FROM orders WHERE id = $1',
+        params: [7],
+      });
+
+      expect(seenParams).toEqual([[7]]);
+      await scripted.cleanup();
+    });
+
+    it('fails clearly when the database returns no plan', async () => {
+      await harness.service.useConnection({ databaseUrl: SHOP_URL });
+
+      const attempt = harness.service.explain({ connectionId: 'localhost-5432-shop', sql: 'SELECT 1' });
+
+      await expect(attempt).rejects.toThrow(/no plan/i);
+    });
+
+    it('rolls back, releases the client, and hides secrets when the statement fails', async () => {
+      const scripted = await createServiceHarness((text) =>
+        text.startsWith('EXPLAIN') ? new Error(`relation does not exist via ${SHOP_URL}`) : undefined,
+      );
+      await scripted.service.useConnection({ databaseUrl: SHOP_URL });
+
+      const attempt = scripted.service.explain({ connectionId: 'localhost-5432-shop', sql: 'SELECT * FROM nope' });
+
+      await expect(attempt).rejects.toThrow('relation does not exist via postgres://app:***@localhost:5432/shop');
+      expect(scripted.pools[0]?.pool.statements.at(-1)).toBe('ROLLBACK');
+      expect(scripted.pools[0]?.pool.outstandingClients).toBe(0);
+      await scripted.cleanup();
+    });
+
+    it('fails clearly for a connection id that is not registered', async () => {
+      await expect(harness.service.explain({ connectionId: 'unknown', sql: 'SELECT 1' })).rejects.toThrow(/unknown/);
+    });
+  });
+
   describe('query', () => {
     it('runs the statement inside a read-only transaction with a timeout and rolls it back', async () => {
       const rows = [{ id: 1 }, { id: 2 }];
@@ -394,9 +562,108 @@ describe('PgMcpService', () => {
       expect(scripted.pools[0]?.pool.statements.slice(1)).toEqual([
         'BEGIN READ ONLY',
         'SET LOCAL statement_timeout = 15000',
-        'SELECT id FROM orders',
+        'DECLARE pg_mcp_cursor NO SCROLL CURSOR FOR SELECT id FROM orders',
+        'FETCH FORWARD 4 FROM pg_mcp_cursor',
         'ROLLBACK',
       ]);
+      expect(scripted.pools[0]?.pool.outstandingClients).toBe(0);
+      await scripted.cleanup();
+    });
+
+    it('asks the database for one row more than the limit, so a huge result is never loaded', async () => {
+      const thousandRows = Array.from({ length: 1000 }, (_, n) => ({ n }));
+      const scripted = await createServiceHarness((text) =>
+        text === 'SELECT n FROM big' ? { rows: thousandRows, rowCount: 1000 } : undefined,
+      );
+      await scripted.service.useConnection({ databaseUrl: SHOP_URL });
+
+      const output = await scripted.service.query({ connectionId: 'localhost-5432-shop', sql: 'SELECT n FROM big' });
+
+      // The limit is 3, so the fetch asks for 4: the extra row only tells whether the result was cut.
+      expect(scripted.pools[0]?.pool.statements).toContain('FETCH FORWARD 4 FROM pg_mcp_cursor');
+      expect(output).toEqual({ rows: thousandRows.slice(0, 3), rowCount: 3, truncated: true });
+      await scripted.cleanup();
+    });
+
+    it.each([
+      ['a plain SELECT', 'SELECT 1'],
+      ['lower case', 'select 1'],
+      ['leading whitespace', '  \n\tSELECT 1'],
+      ['a line comment before it', '-- the orders\nSELECT 1'],
+      ['a block comment before it', '/* the orders */ SELECT 1'],
+      ['a parenthesized query', '(SELECT 1) UNION (SELECT 2)'],
+      ['WITH', 'WITH t AS (SELECT 1) SELECT * FROM t'],
+      ['VALUES', 'VALUES (1), (2)'],
+      ['TABLE', 'TABLE orders'],
+    ])('reads %s through a cursor', async (_label, sql) => {
+      const scripted = await createServiceHarness();
+      await scripted.service.useConnection({ databaseUrl: SHOP_URL });
+
+      await scripted.service.query({ connectionId: 'localhost-5432-shop', sql });
+
+      expect(scripted.pools[0]?.pool.statements).toContain(`DECLARE pg_mcp_cursor NO SCROLL CURSOR FOR ${sql}`);
+      await scripted.cleanup();
+    });
+
+    it.each([
+      ['SHOW', 'SHOW search_path'],
+      ['EXPLAIN', 'EXPLAIN SELECT 1'],
+      ['DELETE', 'DELETE FROM orders'],
+      ['INSERT', 'INSERT INTO orders DEFAULT VALUES'],
+      ['SET', 'SET search_path TO public'],
+      ['invalid SQL', 'SELEC 1'],
+      ['an empty statement', '   '],
+    ])('runs %s directly, without a failed cursor attempt in the server log', async (_label, sql) => {
+      const scripted = await createServiceHarness();
+      await scripted.service.useConnection({ databaseUrl: SHOP_URL });
+
+      await scripted.service.query({ connectionId: 'localhost-5432-shop', sql });
+
+      expect(scripted.pools[0]?.pool.statements.slice(1)).toEqual([
+        'BEGIN READ ONLY',
+        'SET LOCAL statement_timeout = 15000',
+        sql,
+        'ROLLBACK',
+      ]);
+      await scripted.cleanup();
+    });
+
+    it('falls back to running the statement directly, in a fresh transaction, when the cursor is refused', async () => {
+      const withDelete = 'WITH d AS (DELETE FROM orders RETURNING 1) SELECT * FROM d';
+      const scripted = await createServiceHarness((text) => {
+        if (text.startsWith('DECLARE')) return new Error('DECLARE CURSOR must not contain data-modifying statements');
+        return text === withDelete ? { rows: [{ one: 1 }], rowCount: 1 } : undefined;
+      });
+      await scripted.service.useConnection({ databaseUrl: SHOP_URL });
+
+      const output = await scripted.service.query({ connectionId: 'localhost-5432-shop', sql: withDelete });
+
+      expect(output).toEqual({ rows: [{ one: 1 }], rowCount: 1, truncated: false });
+      // The refused DECLARE aborts the first transaction, so it is rolled back and a new one runs the statement.
+      expect(scripted.pools[0]?.pool.statements.slice(1)).toEqual([
+        'BEGIN READ ONLY',
+        'SET LOCAL statement_timeout = 15000',
+        `DECLARE pg_mcp_cursor NO SCROLL CURSOR FOR ${withDelete}`,
+        'ROLLBACK',
+        'BEGIN READ ONLY',
+        'SET LOCAL statement_timeout = 15000',
+        withDelete,
+        'ROLLBACK',
+      ]);
+      expect(scripted.pools[0]?.pool.outstandingClients).toBe(0);
+      await scripted.cleanup();
+    });
+
+    it('reports the server error of the statement itself, not the one of the cursor attempt', async () => {
+      const scripted = await createServiceHarness((text) => {
+        if (text.startsWith('DECLARE')) return new Error('syntax error at or near "FORM" while declaring');
+        return text === 'SELECT * FORM orders' ? new Error('syntax error at or near "FORM"') : undefined;
+      });
+      await scripted.service.useConnection({ databaseUrl: SHOP_URL });
+
+      const attempt = scripted.service.query({ connectionId: 'localhost-5432-shop', sql: 'SELECT * FORM orders' });
+
+      await expect(attempt).rejects.toThrow(/^syntax error at or near "FORM"$/);
       expect(scripted.pools[0]?.pool.outstandingClients).toBe(0);
       await scripted.cleanup();
     });
@@ -440,6 +707,8 @@ describe('PgMcpService', () => {
 
       await expect(attempt).rejects.toThrow('cannot execute DELETE via postgres://app:***@localhost:5432/shop');
       expect(scripted.pools[0]?.pool.statements.at(-1)).toBe('ROLLBACK');
+      // The cursor opened, so the failure came from running the statement: it is reported, not retried.
+      expect(scripted.pools[0]?.pool.statements.filter((statement) => statement === 'BEGIN READ ONLY')).toHaveLength(1);
       expect(scripted.pools[0]?.pool.outstandingClients).toBe(0);
       await scripted.cleanup();
     });

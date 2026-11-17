@@ -28,11 +28,19 @@ import {
  *
  * Behaviors verified against the real server:
  * 1. Registration, and listing of schemas, tables, and views.
- * 2. Table descriptions: columns with types and defaults, composite primary and
- *    foreign keys, indexes, and the error for a table that does not exist.
- * 3. A parameterized read returns rows.
- * 4. PostgreSQL itself refuses a write sent through `query`.
- * 5. A write commits when writes are allowed and is refused, leaving the data
+ * 2. Table descriptions: columns with types, defaults and enum values, composite
+ *    primary and foreign keys, indexes, the estimated row count, and the error
+ *    for a table that does not exist.
+ * 3. Name search over tables and columns: case-insensitive, literal `%` and `_`,
+ *    and restricted to one schema.
+ * 4. A parameterized read returns rows, and a huge result is cut at the row
+ *    limit by the server instead of being loaded whole.
+ * 5. Statements that cannot be a cursor (`SHOW`) still run, and invalid SQL
+ *    reports the server's own error.
+ * 6. PostgreSQL itself refuses a write sent through `query`.
+ * 7. Execution plans: a statement, even a write, is only planned unless analyze
+ *    is requested, and analyzing a write is refused by the read-only transaction.
+ * 8. A write commits when writes are allowed and is refused, leaving the data
  *    untouched, when they are off.
  *
  * Out of scope: the MCP transport and tool wiring.
@@ -119,10 +127,23 @@ describe.skipIf(!process.env[TEST_DATABASE_URL_ENV])('PgMcpService against a rea
 
     expect(description.columns).toEqual([
       // The schema is not on the MCP session's search_path, so PostgreSQL qualifies the sequence name.
-      { name: 'id', type: 'integer', nullable: false, default: `nextval('${schema}.orders_id_seq'::regclass)` },
-      { name: 'customer_id', type: 'integer', nullable: true, default: null },
-      { name: 'total', type: 'numeric(10,2)', nullable: false, default: '0' },
-      { name: 'note', type: 'character varying(40)', nullable: true, default: null },
+      {
+        name: 'id',
+        type: 'integer',
+        nullable: false,
+        default: `nextval('${schema}.orders_id_seq'::regclass)`,
+        enumValues: null,
+      },
+      { name: 'customer_id', type: 'integer', nullable: true, default: null, enumValues: null },
+      { name: 'total', type: 'numeric(10,2)', nullable: false, default: '0', enumValues: null },
+      { name: 'note', type: 'character varying(40)', nullable: true, default: null, enumValues: null },
+      {
+        name: 'status',
+        type: `${schema}.order_status`,
+        nullable: false,
+        default: `'pending'::${schema}.order_status`,
+        enumValues: ['pending', 'shipped', 'delivered'],
+      },
     ]);
     expect(description.primaryKey).toEqual(['id']);
     expect(description.foreignKeys).toEqual([
@@ -135,6 +156,17 @@ describe.skipIf(!process.env[TEST_DATABASE_URL_ENV])('PgMcpService against a rea
       },
     ]);
     expect(description.indexes.map((i) => i.name)).toEqual(['orders_customer_idx', 'orders_pkey']);
+  });
+
+  it('reports the estimated row count only for a table that has statistics', async () => {
+    const analyzed = await service.describeTable({ connectionId, schema, table: 'customers' });
+    const neverAnalyzed = await service.describeTable({ connectionId, schema, table: 'orders' });
+    const view = await service.describeTable({ connectionId, schema, table: 'recent_orders' });
+
+    // customers was analyzed with two rows; orders never was, so PostgreSQL has no estimate; a view has none.
+    expect(analyzed.estimatedRows).toBe(2);
+    expect(neverAnalyzed.estimatedRows).toBeNull();
+    expect(view.estimatedRows).toBeNull();
   });
 
   it('keeps composite primary and foreign keys in column order', async () => {
@@ -162,6 +194,94 @@ describe.skipIf(!process.env[TEST_DATABASE_URL_ENV])('PgMcpService against a rea
       rowCount: 2,
       truncated: false,
     });
+  });
+
+  it('finds tables and columns by part of their name, ignoring case', async () => {
+    const found = await service.searchSchema({ connectionId, schema, term: 'ORDER' });
+
+    // Ordering depends on the database collation, so the names are compared sorted.
+    expect(found.tables.map((table) => table.name).sort()).toEqual(['order_items', 'orders', 'recent_orders']);
+    expect(found.tables.every((table) => table.schema === schema)).toBe(true);
+    expect(found.columns).toEqual([{ schema, table: 'order_items', column: 'order_id', type: 'integer' }]);
+  });
+
+  it('matches the characters % and _ of the term literally', async () => {
+    const underscore = await service.searchSchema({ connectionId, schema, term: 'order_' });
+    const percent = await service.searchSchema({ connectionId, schema, term: '%' });
+
+    expect(underscore.tables.map((table) => table.name)).toEqual(['order_items']);
+    expect(percent).toEqual({ tables: [], columns: [] });
+  });
+
+  it('finds a column and reports the view kind of a relation', async () => {
+    const column = await service.searchSchema({ connectionId, schema, term: 'email' });
+    const view = await service.searchSchema({ connectionId, schema, term: 'recent' });
+
+    expect(column.columns).toEqual([{ schema, table: 'customers', column: 'email', type: 'text' }]);
+    expect(view.tables).toEqual([{ schema, name: 'recent_orders', type: 'view' }]);
+  });
+
+  it('searches only the schema it is restricted to', async () => {
+    const found = await service.searchSchema({ connectionId, schema: 'schema_that_does_not_exist', term: 'order' });
+
+    expect(found).toEqual({ tables: [], columns: [] });
+  });
+
+  it('returns only the row limit of a result with millions of rows', async () => {
+    // The service limit is 100. A cursor makes the server hand over 101 rows instead of five million.
+    const output = await service.query({
+      connectionId,
+      sql: 'SELECT g FROM generate_series(1, 5000000) AS g',
+    });
+
+    expect(output.rowCount).toBe(100);
+    expect(output.truncated).toBe(true);
+  });
+
+  it('runs a statement that cannot be a cursor, such as SHOW', async () => {
+    const output = await service.query({ connectionId, sql: 'SHOW search_path' });
+
+    expect(output.rowCount).toBe(1);
+    expect(output.truncated).toBe(false);
+  });
+
+  it('reports the server error of an invalid statement', async () => {
+    const attempt = service.query({ connectionId, sql: 'SELEC 1' });
+
+    await expect(attempt).rejects.toThrow(/syntax error at or near "SELEC"/);
+  });
+
+  it('explains a statement without running it', async () => {
+    const { plan } = await service.explain({ connectionId, sql: `SELECT * FROM ${schema}.customers` });
+
+    expect(plan.Plan).toMatchObject({ 'Node Type': 'Seq Scan', 'Relation Name': 'customers' });
+    expect(plan).not.toHaveProperty('Execution Time');
+  });
+
+  it('measures the real execution when analyze is requested', async () => {
+    const { plan } = await service.explain({
+      connectionId,
+      sql: `SELECT * FROM ${schema}.customers`,
+      analyze: true,
+    });
+
+    expect(typeof plan['Execution Time']).toBe('number');
+  });
+
+  it('explains a write without running it', async () => {
+    const before = await service.query({ connectionId, sql: `SELECT count(*)::int AS total FROM ${schema}.customers` });
+
+    const { plan } = await service.explain({ connectionId, sql: `DELETE FROM ${schema}.customers` });
+
+    const after = await service.query({ connectionId, sql: `SELECT count(*)::int AS total FROM ${schema}.customers` });
+    expect(plan.Plan).toMatchObject({ 'Node Type': 'ModifyTable' });
+    expect(after.rows).toEqual(before.rows);
+  });
+
+  it('refuses to analyze a write because the transaction is read-only', async () => {
+    const attempt = service.explain({ connectionId, sql: `DELETE FROM ${schema}.customers`, analyze: true });
+
+    await expect(attempt).rejects.toThrow(/read-only transaction/);
   });
 
   it('refuses a write because the transaction is read-only', async () => {

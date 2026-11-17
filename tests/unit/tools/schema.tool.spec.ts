@@ -39,10 +39,10 @@ describe('registerSchemaTools', () => {
     return recorder;
   };
 
-  it('registers the three schema tools', async () => {
+  it('registers the four schema tools', async () => {
     const recorder = await setUp(CatalogQuery.LIST_SCHEMAS, []);
 
-    expect(recorder.toolNames()).toEqual(['list_schemas', 'list_tables', 'describe_table']);
+    expect(recorder.toolNames()).toEqual(['list_schemas', 'list_tables', 'describe_table', 'search_schema']);
   });
 
   it('lists schemas', async () => {
@@ -66,6 +66,7 @@ describe('registerSchemaTools', () => {
     const description = {
       schema: 'public',
       table: 'orders',
+      estimatedRows: null,
       columns: [],
       primaryKey: [],
       foreignKeys: [],
@@ -76,6 +77,26 @@ describe('registerSchemaTools', () => {
     const result = await recorder.call(ToolMetadata.DESCRIBE_TABLE.name, { connectionId, table: 'orders' });
 
     expect(parseToolJson(result)).toEqual(description);
+  });
+
+  it('searches tables and columns by name', async () => {
+    const matches = {
+      tables: [{ schema: 'public', name: 'orders', type: 'table' }],
+      columns: [{ schema: 'public', table: 'orders', column: 'order_date', type: 'date' }],
+    };
+    const recorder = await setUp(CatalogQuery.SEARCH_SCHEMA, matches);
+
+    const result = await recorder.call(ToolMetadata.SEARCH_SCHEMA.name, { connectionId, term: 'order' });
+
+    expect(parseToolJson(result)).toEqual(matches);
+  });
+
+  it('returns an error result when the search term is blank', async () => {
+    const recorder = await setUp(CatalogQuery.SEARCH_SCHEMA, { tables: [], columns: [] });
+
+    const result = await recorder.call(ToolMetadata.SEARCH_SCHEMA.name, { connectionId, term: ' ' });
+
+    expect(toolErrorText(result)).toMatch(/search term/i);
   });
 
   it('returns an error result for an unknown connection', async () => {

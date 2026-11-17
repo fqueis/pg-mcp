@@ -9,6 +9,8 @@ export const CatalogQuery = {
   LIST_TABLES: 'list-tables',
   /** Describes one table: columns, primary key, foreign keys, and indexes. */
   DESCRIBE_TABLE: 'describe-table',
+  /** Finds tables and columns whose name contains a term. */
+  SEARCH_SCHEMA: 'search-schema',
 } as const;
 
 /**
@@ -27,6 +29,9 @@ export const CATALOG_SQL_EXTENSION = '.sql';
  * is `src/sql/` when running from source and `dist/sql/` from the published package.
  */
 export const CATALOG_SQL_DIRECTORY = new URL('../sql/', import.meta.url);
+
+/** Maximum matches a schema search returns for tables, and again for columns. */
+export const SEARCH_RESULT_LIMIT = 50;
 
 /** Schema assumed when the caller does not name one. */
 export const DEFAULT_SCHEMA = 'public';

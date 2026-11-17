@@ -3,7 +3,11 @@
 -- Parameters: $1 = schema name, $2 = table name.
 -- Result: one row, column "result":
 --   { schema, table,
---     columns:     [{ name, type, nullable, default }]            in declaration order,
+--     estimatedRows: number or null     rows PostgreSQL estimates for a table, materialized view, or
+--                                       partitioned table that has statistics (from ANALYZE or autovacuum);
+--                                       null when it has none, and always null for a view,
+--     columns:     [{ name, type, nullable, default, enumValues }]  in declaration order, where enumValues
+--                                       lists the labels of an enum type in order, and is null otherwise,
 --     primaryKey:  [column name]                                  in key order,
 --     foreignKeys: [{ name, columns, referencesSchema, referencesTable, referencesColumns }],
 --     indexes:     [{ name, definition }] }
@@ -14,13 +18,21 @@
 SELECT jsonb_build_object(
   'schema', n.nspname,
   'table', c.relname,
+  'estimatedRows', CASE
+    WHEN c.relkind IN ('r', 'p', 'm') AND c.reltuples >= 0 THEN c.reltuples::bigint
+  END,
   'columns', COALESCE((
     SELECT jsonb_agg(
       jsonb_build_object(
         'name', a.attname,
         'type', format_type(a.atttypid, a.atttypmod),
         'nullable', NOT a.attnotnull,
-        'default', pg_get_expr(d.adbin, d.adrelid)
+        'default', pg_get_expr(d.adbin, d.adrelid),
+        'enumValues', (
+          SELECT jsonb_agg(e.enumlabel ORDER BY e.enumsortorder)
+          FROM pg_enum e
+          WHERE e.enumtypid = a.atttypid
+        )
       )
       ORDER BY a.attnum
     )

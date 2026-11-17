@@ -58,6 +58,15 @@ export const ToolMetadata = {
     description:
       'Describe one table or view: columns with types, nullability and defaults, primary key, foreign keys, and indexes.',
   },
+  /** Searches tables and columns by name. */
+  SEARCH_SCHEMA: {
+    name: 'search_schema',
+    title: 'Search schema',
+    description:
+      'Find tables and columns whose name contains a term (case-insensitive), across every user schema or one schema. ' +
+      'Use it in an unfamiliar database to locate where something lives before calling describe_table. ' +
+      'Results are capped per kind.',
+  },
   /** Runs a read-only query. */
   QUERY: {
     name: 'query',
@@ -65,6 +74,16 @@ export const ToolMetadata = {
     description:
       'Run one SQL statement inside a read-only transaction. The server refuses any write. Results are capped ' +
       'at the row limit and flagged with truncated when more rows existed. Bind values with $1, $2 and params.',
+  },
+  /** Explains a statement. */
+  EXPLAIN: {
+    name: 'explain',
+    title: 'Explain a statement',
+    description:
+      'Return the execution plan of one SQL statement as JSON, to judge cost and index use before running it. ' +
+      'Without analyze the statement is only planned, so even an INSERT, UPDATE or DELETE can be explained safely. ' +
+      'With analyze the statement really runs and the plan carries measured times; the transaction stays read-only, ' +
+      'so a write is still refused.',
   },
   /** Runs a statement that changes data. */
   EXECUTE: {
@@ -95,13 +114,19 @@ export const ToolField = {
   CONNECTION_NEW_ID: 'Stable id to register under. Defaults to host-port-database.',
   /** `schema` of list_tables and describe_table. */
   SCHEMA: 'Schema name. Defaults to public.',
+  /** `term` of search_schema. */
+  SEARCH_TERM: 'Text to look for in table and column names, case-insensitive. Not blank.',
   /** `table` of describe_table. */
   TABLE: 'Table or view name.',
   /** `sql` of query. */
   QUERY_SQL: 'A single read-only SQL statement. Use $1, $2 for values.',
   /** `sql` of execute. */
   EXECUTE_SQL: 'A single SQL statement that changes data. Use $1, $2 for values.',
-  /** `params` of query and execute. */
+  /** `sql` of explain. */
+  EXPLAIN_SQL: 'A single SQL statement to explain. Use $1, $2 for values.',
+  /** `analyze` of explain. */
+  ANALYZE: 'When true the statement really runs and the plan includes measured times. Default false: plan only.',
+  /** `params` of query, explain and execute. */
   PARAMS: 'Values bound to $1, $2, and so on, in order.',
   /** `maxRows` of query. */
   MAX_ROWS: 'Maximum rows to return. Capped by the server limit.',

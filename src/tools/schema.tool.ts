@@ -7,7 +7,7 @@ import type { PgMcpService } from '@services/pg-mcp.service.js';
 import { errorResult, jsonResult } from '@utils/tool-result.utils.js';
 
 /**
- * Registers the schema exploration tools: list schemas, list tables, describe a table.
+ * Registers the schema exploration tools: list schemas, list tables, describe a table, search by name.
  *
  * The tools are thin adapters: they validate input with Zod, call the service,
  * and map any thrown error to an error result the agent can read.
@@ -66,6 +66,26 @@ export function registerSchemaTools(server: McpServer, service: PgMcpService): v
     async (args) => {
       try {
         return jsonResult(await service.describeTable(args));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    ToolMetadata.SEARCH_SCHEMA.name,
+    {
+      title: ToolMetadata.SEARCH_SCHEMA.title,
+      description: ToolMetadata.SEARCH_SCHEMA.description,
+      inputSchema: {
+        connectionId: z.string().describe(ToolField.CONNECTION_ID),
+        term: z.string().min(1).describe(ToolField.SEARCH_TERM),
+        schema: z.string().optional().describe(ToolField.SCHEMA),
+      },
+    },
+    async (args) => {
+      try {
+        return jsonResult(await service.searchSchema(args));
       } catch (error) {
         return errorResult(error);
       }
