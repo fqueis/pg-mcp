@@ -10,6 +10,7 @@ import { RecordingMcpServerProvider } from '@tests/helpers/fakes/recording-mcp-s
 import { createServiceHarness } from '@tests/helpers/utils/create-service.utils.js';
 import { parseToolJson, toolErrorText } from '@tests/helpers/utils/tool-result.utils.js';
 import type { ServiceHarness } from '@tests/helpers/interfaces/service-harness.interface.js';
+import type { FakeHandler } from '@tests/helpers/types/fake-handler.type.js';
 
 /**
  * Seam: the query and execute tools as the MCP server exposes them, over a real service.
@@ -29,11 +30,12 @@ describe('registerQueryTools', () => {
    *
    * @param writeMode - Write policy mode of the service.
    * @param canAsk - Whether the fake client can ask the human.
+   * @param script - Optional extra script for the fake database; the default answers `SELECT 1 AS one`.
    * @returns The recording server to call tools on.
    */
-  const setUp = async (writeMode: WritePolicyModeType, canAsk = false) => {
+  const setUp = async (writeMode: WritePolicyModeType, canAsk = false, script?: FakeHandler) => {
     harness = await createServiceHarness(
-      (text) => (text === 'SELECT 1 AS one' ? { rows: [{ one: 1 }], rowCount: 1 } : undefined),
+      script ?? ((text) => (text === 'SELECT 1 AS one' ? { rows: [{ one: 1 }], rowCount: 1 } : undefined)),
       { writeMode, elicitor: new FakeElicitor(canAsk, canAsk) },
     );
     const recorder = new RecordingMcpServerProvider();
@@ -42,10 +44,29 @@ describe('registerQueryTools', () => {
     return recorder;
   };
 
-  it('registers query and execute', async () => {
+  it('registers query, explain, and execute', async () => {
     const recorder = await setUp(WritePolicyMode.OFF);
 
-    expect(recorder.toolNames()).toEqual(['query', 'execute']);
+    expect(recorder.toolNames()).toEqual(['query', 'explain', 'execute']);
+  });
+
+  it('returns the execution plan of a statement', async () => {
+    const plan = { Plan: { 'Node Type': 'Result' } };
+    const recorder = await setUp(WritePolicyMode.OFF, false, (text) =>
+      text === 'EXPLAIN (FORMAT JSON) SELECT 1' ? { rows: [{ 'QUERY PLAN': [plan] }], rowCount: 1 } : undefined,
+    );
+
+    const result = await recorder.call(ToolMetadata.EXPLAIN.name, { connectionId, sql: 'SELECT 1' });
+
+    expect(parseToolJson(result)).toEqual({ plan });
+  });
+
+  it('returns an error result when explaining on an unknown connection', async () => {
+    const recorder = await setUp(WritePolicyMode.OFF);
+
+    const result = await recorder.call(ToolMetadata.EXPLAIN.name, { connectionId: 'unknown', sql: 'SELECT 1' });
+
+    expect(toolErrorText(result)).toMatch(/unknown/);
   });
 
   it('runs a read-only query and returns the rows', async () => {
