@@ -64,6 +64,7 @@ Initial release: a global PostgreSQL MCP server where agents register connection
 - Integration spec against a real PostgreSQL (`PG_MCP_TEST_URL`), run in PR Checks with a service container
 - npm publish via Trusted Publishing (OIDC) and `npx -y @fqueis/pg-mcp` install path
 
-[Unreleased]: https://github.com/fqueis/pg-mcp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/fqueis/pg-mcp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/fqueis/pg-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/fqueis/pg-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/fqueis/pg-mcp/releases/tag/v0.1.0
