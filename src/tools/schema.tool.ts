@@ -20,6 +20,7 @@ export function registerSchemaTools(server: McpServer, service: PgMcpService): v
     ToolMetadata.LIST_SCHEMAS.name,
     {
       title: ToolMetadata.LIST_SCHEMAS.title,
+      annotations: ToolMetadata.LIST_SCHEMAS.annotations,
       description: ToolMetadata.LIST_SCHEMAS.description,
       inputSchema: { connectionId: z.string().describe(ToolField.CONNECTION_ID) },
     },
@@ -36,6 +37,7 @@ export function registerSchemaTools(server: McpServer, service: PgMcpService): v
     ToolMetadata.LIST_TABLES.name,
     {
       title: ToolMetadata.LIST_TABLES.title,
+      annotations: ToolMetadata.LIST_TABLES.annotations,
       description: ToolMetadata.LIST_TABLES.description,
       inputSchema: {
         connectionId: z.string().describe(ToolField.CONNECTION_ID),
@@ -56,6 +58,7 @@ export function registerSchemaTools(server: McpServer, service: PgMcpService): v
     ToolMetadata.DESCRIBE_TABLE.name,
     {
       title: ToolMetadata.DESCRIBE_TABLE.title,
+      annotations: ToolMetadata.DESCRIBE_TABLE.annotations,
       description: ToolMetadata.DESCRIBE_TABLE.description,
       inputSchema: {
         connectionId: z.string().describe(ToolField.CONNECTION_ID),
@@ -76,6 +79,7 @@ export function registerSchemaTools(server: McpServer, service: PgMcpService): v
     ToolMetadata.SEARCH_SCHEMA.name,
     {
       title: ToolMetadata.SEARCH_SCHEMA.title,
+      annotations: ToolMetadata.SEARCH_SCHEMA.annotations,
       description: ToolMetadata.SEARCH_SCHEMA.description,
       inputSchema: {
         connectionId: z.string().describe(ToolField.CONNECTION_ID),

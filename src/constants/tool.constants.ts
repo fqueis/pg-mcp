@@ -1,5 +1,7 @@
+import { ToolAnnotation } from '@constants/tool-annotation.constants.js';
+
 /**
- * Name, title, and description of every MCP tool. The description is what the
+ * Name, title, behavior hints, and description of every MCP tool. The description is what the
  * agent reads to decide when to call the tool.
  */
 export const ToolMetadata = {
@@ -7,6 +9,7 @@ export const ToolMetadata = {
   USE_CONNECTION: {
     name: 'use_connection',
     title: 'Use connection',
+    annotations: ToolAnnotation.REGISTER,
     description:
       'Register or renew a PostgreSQL connection and verify it. Give exactly one credential source: ' +
       'databaseUrl (stored as given), envVar (name of an environment variable of the server process), or envFile ' +
@@ -17,24 +20,28 @@ export const ToolMetadata = {
   LIST_CONNECTIONS: {
     name: 'list_connections',
     title: 'List connections',
+    annotations: ToolAnnotation.READ,
     description: 'List the registered connections that have not expired. Never returns a password.',
   },
   /** Removes one connection. */
   FORGET_CONNECTION: {
     name: 'forget_connection',
     title: 'Forget connection',
+    annotations: ToolAnnotation.REMOVE,
     description: 'Remove one connection from the registry and close its pool.',
   },
   /** Removes every connection. */
   CLEAR_CONNECTIONS: {
     name: 'clear_connections',
     title: 'Clear connections',
+    annotations: ToolAnnotation.REMOVE,
     description: 'Remove every connection from the registry and close every pool.',
   },
   /** Reopens a connection. */
   REFRESH_CONNECTION: {
     name: 'refresh_connection',
     title: 'Refresh connection',
+    annotations: ToolAnnotation.REGISTER,
     description:
       'Reopen a registered connection and resolve its credential source again. Use it after the password or ' +
       'the .env file changed, or after the connection dropped.',
@@ -43,18 +50,21 @@ export const ToolMetadata = {
   LIST_SCHEMAS: {
     name: 'list_schemas',
     title: 'List schemas',
+    annotations: ToolAnnotation.READ,
     description: 'List the user schemas of the database behind a registered connection.',
   },
   /** Lists tables. */
   LIST_TABLES: {
     name: 'list_tables',
     title: 'List tables',
+    annotations: ToolAnnotation.READ,
     description: 'List the tables and views of one schema (default public) of a registered connection.',
   },
   /** Describes a table. */
   DESCRIBE_TABLE: {
     name: 'describe_table',
     title: 'Describe table',
+    annotations: ToolAnnotation.READ,
     description:
       'Describe one table or view: columns with types, nullability and defaults, primary key, foreign keys, and indexes.',
   },
@@ -62,6 +72,7 @@ export const ToolMetadata = {
   SEARCH_SCHEMA: {
     name: 'search_schema',
     title: 'Search schema',
+    annotations: ToolAnnotation.READ,
     description:
       'Find tables and columns whose name contains a term (case-insensitive), across every user schema or one schema. ' +
       'Use it in an unfamiliar database to locate where something lives before calling describe_table. ' +
@@ -71,6 +82,7 @@ export const ToolMetadata = {
   QUERY: {
     name: 'query',
     title: 'Run a read-only query',
+    annotations: ToolAnnotation.READ,
     description:
       'Run one SQL statement inside a read-only transaction. The server refuses any write. Results are capped ' +
       'at the row limit and flagged with truncated when more rows existed. Bind values with $1, $2 and params.',
@@ -79,6 +91,7 @@ export const ToolMetadata = {
   EXPLAIN: {
     name: 'explain',
     title: 'Explain a statement',
+    annotations: ToolAnnotation.READ,
     description:
       'Return the execution plan of one SQL statement as JSON, to judge cost and index use before running it. ' +
       'Without analyze the statement is only planned, so even an INSERT, UPDATE or DELETE can be explained safely. ' +
@@ -89,6 +102,7 @@ export const ToolMetadata = {
   EXECUTE: {
     name: 'execute',
     title: 'Run a statement that changes data',
+    annotations: ToolAnnotation.WRITE,
     description:
       'Run one INSERT, UPDATE, DELETE, or DDL statement in a transaction. Depending on the server settings this is ' +
       'refused, needs the human to approve it, or runs directly. When the client cannot ask the human, show the ' +
