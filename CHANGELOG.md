@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Dependabot no longer proposes a new major version of `typescript`. The first run grouped TypeScript 7 with ten harmless updates, and the whole group failed lint because `typescript-eslint` does not support TypeScript 7 yet. Raise it by hand once it does
+
 ## [0.3.0] - 2026-11-23
 
 Security fixes after an external scan of 0.2.0 reported vulnerable dependencies. Checking the report against the code also found that `query` and `explain` could be made to write.
