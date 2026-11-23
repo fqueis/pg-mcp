@@ -10,6 +10,13 @@ updates:
         dependency-type: production
       development-dependencies:
         dependency-type: development
+    ignore:
+      # typescript-eslint does not support a new TypeScript major right away, and one failing
+      # update would hold back the rest of the development group. Raise it by hand once
+      # typescript-eslint supports the new major.
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
   - package-ecosystem: github-actions
     directory: /
     schedule:
