@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-23
+
+Security fixes after an external scan of 0.2.0 reported vulnerable dependencies. Checking the report against the code also found that `query` and `explain` could be made to write.
+
+### Added
+
+- Behavior hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) on all twelve tools, always as explicit booleans, so a client can tell a read from a delete without parsing the description. Only `execute` is a destructive write that is not safe to repeat; `forget_connection` and `clear_connections` are destructive but idempotent
+- `pnpm audit --prod --audit-level=high` in PR Checks, so a known high advisory in a runtime dependency blocks the merge
+- Dependabot for npm and GitHub Actions, weekly
+- `SECURITY.md` with the private reporting channel and what the server promises
+- Integration cases that try to leave the read-only transaction through `query`, `explain`, and `execute`, and a unit spec for the pool provider
+
+### Changed
+
+- Every tool now runs exactly one statement per call. A SQL text that holds several statements is refused by PostgreSQL with `cannot insert multiple commands into a prepared statement`. This also applies to `execute`, so the SQL the human approves is the whole text that runs; send a script as one call per statement
+- `@modelcontextprotocol/sdk` 1.29.0 to 1.32.2 and `zod` 4.4.3 to 4.6.7
+- README and ARCHITECT no longer say a huge result is never loaded into memory, or that secrets never leave the process: a literal `databaseUrl` is stored in the registry file as given
+
+### Security
+
+- `query` and `explain` could write despite the read-only transaction. SQL without parameters was sent as one simple query, which runs every statement in the text, so `SELECT 1; COMMIT; CREATE TABLE t (id int)` ended the `READ ONLY` transaction with the `COMMIT` and ran the rest with write access. Connections now use the driver's `extended` query mode, which accepts one statement per call. Reproduced against PostgreSQL 16 before the fix. If you ran 0.2.0 or 0.1.0 with a database role that can write, use a read-only role and review what agents ran
+- Updating `@modelcontextprotocol/sdk` and `zod` fixes seven published advisories, five high and two moderate. Six are in the SDK and concern its HTTP transport, OAuth client, and bearer authentication, none of which this server uses, since it only speaks stdio. The seventh is in `zod`: validating a very large input could exhaust memory
+- One moderate advisory remains, in `@hono/node-server`, which the SDK pulls in for its HTTP transport. This server never loads it, and the fix needs a new major version of that package, so it waits for the SDK to update it
+
 ## [0.2.0] - 2026-11-16
 
 Two new tools for exploring and tuning, richer table descriptions, and a fix that keeps large query results out of memory.
