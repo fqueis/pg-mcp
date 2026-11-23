@@ -22,6 +22,7 @@ export function registerQueryTools(server: McpServer, service: PgMcpService): vo
     ToolMetadata.QUERY.name,
     {
       title: ToolMetadata.QUERY.title,
+      annotations: ToolMetadata.QUERY.annotations,
       description: ToolMetadata.QUERY.description,
       inputSchema: {
         connectionId: z.string().describe(ToolField.CONNECTION_ID),
@@ -43,6 +44,7 @@ export function registerQueryTools(server: McpServer, service: PgMcpService): vo
     ToolMetadata.EXPLAIN.name,
     {
       title: ToolMetadata.EXPLAIN.title,
+      annotations: ToolMetadata.EXPLAIN.annotations,
       description: ToolMetadata.EXPLAIN.description,
       inputSchema: {
         connectionId: z.string().describe(ToolField.CONNECTION_ID),
@@ -64,6 +66,7 @@ export function registerQueryTools(server: McpServer, service: PgMcpService): vo
     ToolMetadata.EXECUTE.name,
     {
       title: ToolMetadata.EXECUTE.title,
+      annotations: ToolMetadata.EXECUTE.annotations,
       description: ToolMetadata.EXECUTE.description,
       inputSchema: {
         connectionId: z.string().describe(ToolField.CONNECTION_ID),

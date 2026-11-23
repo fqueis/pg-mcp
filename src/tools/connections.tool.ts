@@ -19,6 +19,7 @@ export function registerConnectionTools(server: McpServer, service: PgMcpService
     ToolMetadata.USE_CONNECTION.name,
     {
       title: ToolMetadata.USE_CONNECTION.title,
+      annotations: ToolMetadata.USE_CONNECTION.annotations,
       description: ToolMetadata.USE_CONNECTION.description,
       inputSchema: {
         databaseUrl: z.string().optional().describe(ToolField.DATABASE_URL),
@@ -41,6 +42,7 @@ export function registerConnectionTools(server: McpServer, service: PgMcpService
     ToolMetadata.LIST_CONNECTIONS.name,
     {
       title: ToolMetadata.LIST_CONNECTIONS.title,
+      annotations: ToolMetadata.LIST_CONNECTIONS.annotations,
       description: ToolMetadata.LIST_CONNECTIONS.description,
       inputSchema: {},
     },
@@ -57,6 +59,7 @@ export function registerConnectionTools(server: McpServer, service: PgMcpService
     ToolMetadata.FORGET_CONNECTION.name,
     {
       title: ToolMetadata.FORGET_CONNECTION.title,
+      annotations: ToolMetadata.FORGET_CONNECTION.annotations,
       description: ToolMetadata.FORGET_CONNECTION.description,
       inputSchema: { connectionId: z.string().describe(ToolField.CONNECTION_ID) },
     },
@@ -74,6 +77,7 @@ export function registerConnectionTools(server: McpServer, service: PgMcpService
     ToolMetadata.CLEAR_CONNECTIONS.name,
     {
       title: ToolMetadata.CLEAR_CONNECTIONS.title,
+      annotations: ToolMetadata.CLEAR_CONNECTIONS.annotations,
       description: ToolMetadata.CLEAR_CONNECTIONS.description,
       inputSchema: {},
     },
@@ -90,6 +94,7 @@ export function registerConnectionTools(server: McpServer, service: PgMcpService
     ToolMetadata.REFRESH_CONNECTION.name,
     {
       title: ToolMetadata.REFRESH_CONNECTION.title,
+      annotations: ToolMetadata.REFRESH_CONNECTION.annotations,
       description: ToolMetadata.REFRESH_CONNECTION.description,
       inputSchema: { connectionId: z.string().describe(ToolField.CONNECTION_ID) },
     },

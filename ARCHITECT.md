@@ -143,7 +143,7 @@ There is no per-project configuration and no connection string in the MCP client
 
 ### 3. Read-only is enforced by the server
 
-`query` and every catalog read run inside `BEGIN READ ONLY` with `SET LOCAL statement_timeout`, and always end in `ROLLBACK`. PostgreSQL itself rejects any write, so no SQL parsing or keyword filtering decides what is allowed. Results are capped at a row limit and flagged `truncated`.
+`query` and every catalog read run inside `BEGIN READ ONLY` with `SET LOCAL statement_timeout`, and always end in `ROLLBACK`. PostgreSQL itself rejects any write, so no SQL parsing or keyword filtering decides what is allowed. That only holds while the transaction stays open, so every statement is sent in the driver's `extended` query mode (`createPgPool`): the server then accepts exactly one statement per call and refuses a text such as `SELECT 1; COMMIT; DROP TABLE t`, which in the default mode would end the read-only transaction and run the rest with write access. `execute` follows the same rule, so the SQL the human approves is the whole text that runs. Results are capped at a row limit and flagged `truncated`.
 
 ### 4. Write policy with a human in the loop
 
@@ -159,9 +159,9 @@ Only a statement that starts with `SELECT`, `WITH`, `VALUES`, `TABLE`, or an ope
 
 Each catalog tool is one `.sql` file in `src/sql` that returns a single JSON document already shaped like the result (`jsonb_build_object`). The `CatalogService` loads the file once, runs it, and unwraps the document, so there is no row-mapping code and no SQL inside TypeScript. The queries read `pg_catalog` directly, which is faster than `information_schema` and lists objects regardless of the role's ownership. A table description needs one query in one transaction, and it includes the enum labels of enum columns and the estimated row count taken from `pg_class` statistics. `search_schema` is one query too: it matches table and column names case-insensitively, treating `%` and `_` in the term literally, and caps the matches per kind.
 
-### 6. Secrets never leave the process
+### 6. Secrets stay out of results and errors
 
-Every error and tool result passes through `redactSecrets`, which masks the password of any `scheme://user:password@` URL. Original driver errors are not attached as `cause`, because they can embed the connection string. The registry file is written atomically (temporary file, then rename) with owner-only permissions.
+Credentials given by `envVar` or `envFile` are resolved on every connect and never stored; a literal `databaseUrl` is stored as given in the registry file (see the README). Every error and tool result passes through `redactSecrets`, which masks the password of any `scheme://user:password@` URL. Original driver errors are not attached as `cause`, because they can embed the connection string. The registry file is written atomically (temporary file, then rename) with owner-only permissions.
 
 ### 7. Shared registry, short write window
 

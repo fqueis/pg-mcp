@@ -290,6 +290,61 @@ describe.skipIf(!process.env[TEST_DATABASE_URL_ENV])('PgMcpService against a rea
     await expect(attempt).rejects.toThrow(/read-only transaction/);
   });
 
+  /**
+   * Statements that try to end the read-only transaction from inside one string,
+   * so what follows would run with write access. Each one must be refused whole.
+   */
+  const escapeAttempts = (): [string, string][] => [
+    ['COMMIT', `SELECT 1; COMMIT; CREATE TABLE ${schema}.escape_probe (id int)`],
+    [
+      'ROLLBACK and a new transaction',
+      `SELECT 1; ROLLBACK; BEGIN READ WRITE; CREATE TABLE ${schema}.escape_probe (id int); COMMIT`,
+    ],
+    ['a second statement after a harmless one', `SELECT 1; CREATE TABLE ${schema}.escape_probe (id int)`],
+  ];
+
+  /**
+   * Looks for the table the escape attempts try to create.
+   *
+   * @returns Whether the probe table exists.
+   */
+  const probeTableExists = async (): Promise<boolean> => {
+    const { rows } = await service.query({
+      connectionId,
+      sql: 'SELECT to_regclass($1) IS NOT NULL AS found',
+      params: [`${schema}.escape_probe`],
+    });
+    return rows[0]?.found === true;
+  };
+
+  it.each(escapeAttempts())(
+    'refuses a query that tries to leave the read-only transaction: %s',
+    async (_label, sql) => {
+      await expect(service.query({ connectionId, sql })).rejects.toThrow(/multiple commands/);
+
+      expect(await probeTableExists()).toBe(false);
+    },
+  );
+
+  it.each(escapeAttempts())(
+    'refuses an explain that tries to leave the read-only transaction: %s',
+    async (_label, sql) => {
+      await expect(service.explain({ connectionId, sql })).rejects.toThrow();
+
+      expect(await probeTableExists()).toBe(false);
+    },
+  );
+
+  it('refuses an execute that holds more than one statement, so the approved text is the whole text', async () => {
+    const attempt = service.execute({
+      connectionId,
+      sql: `UPDATE ${schema}.customers SET email = email; CREATE TABLE ${schema}.escape_probe (id int)`,
+    });
+
+    await expect(attempt).rejects.toThrow(/multiple commands/);
+    expect(await probeTableExists()).toBe(false);
+  });
+
   it('commits a write when writes are allowed, and the change is visible afterwards', async () => {
     const output = await service.execute({
       connectionId,
