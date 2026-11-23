@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-23
+
 ### Changed
 
 - Dependabot no longer proposes a new major version of `typescript`. The first run grouped TypeScript 7 with ten harmless updates, and the whole group failed lint because `typescript-eslint` does not support TypeScript 7 yet. Raise it by hand once it does
@@ -68,7 +70,8 @@ Initial release: a global PostgreSQL MCP server where agents register connection
 - Integration spec against a real PostgreSQL (`PG_MCP_TEST_URL`), run in PR Checks with a service container
 - npm publish via Trusted Publishing (OIDC) and `npx -y @fqueis/pg-mcp` install path
 
-[Unreleased]: https://github.com/fqueis/pg-mcp/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/fqueis/pg-mcp/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/fqueis/pg-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/fqueis/pg-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/fqueis/pg-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/fqueis/pg-mcp/releases/tag/v0.1.0
