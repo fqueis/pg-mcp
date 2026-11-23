@@ -16,7 +16,7 @@ Built with [`@modelcontextprotocol/sdk`](https://www.npmjs.com/package/@modelcon
 
 - **On-demand connections**: call `use_connection` with a database URL, or point at an environment variable or a `.env` file so the password never appears in the conversation
 - **Schema exploration**: schemas, tables, a search by name across the whole database, and a full table description (columns, primary key, foreign keys, indexes, enum values, estimated row count), each from one catalog query
-- **Read-only by default**: `query` runs inside a `READ ONLY` transaction enforced by the server, with a statement timeout and a row cap that the server applies, so a huge result is never loaded into memory
+- **Read-only by default**: `query` runs inside a `READ ONLY` transaction enforced by the server, with a statement timeout and a row cap that the server applies, so a huge `SELECT` is not loaded into memory
 - **Execution plans**: `explain` shows how PostgreSQL would run a statement, even a write, without running it
 - **Controlled writes**: `execute` is refused, asks the human through MCP elicitation, or runs directly, depending on `PG_MCP_WRITES`
 - **No secrets in output**: passwords are masked in every result and error, and are not written to disk when you use an environment variable or a `.env` file
@@ -165,7 +165,7 @@ In `ask` mode the server uses [MCP elicitation](https://modelcontextprotocol.io/
 
 If the client does not support elicitation, `execute` refuses and tells the agent to show the human the connection and the exact SQL, get an explicit yes in chat, and repeat the call with `confirmedByUser: true`. This fallback is a **soft guard**, because the agent controls that flag. When the client can ask, the flag never bypasses the question.
 
-Reads never need approval. `query` cannot write: the server rejects any change inside a read-only transaction, however the SQL is phrased.
+Reads never need approval. `query` cannot write: the server rejects any change inside a read-only transaction, however the SQL is phrased. Every tool runs exactly one statement per call, so a text such as `SELECT 1; COMMIT; DROP TABLE t` is refused whole instead of leaving the read-only transaction; the SQL you approve for `execute` is the whole text that runs.
 
 ---
 
